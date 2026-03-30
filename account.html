@@ -908,6 +908,9 @@
             background: #6c757d;
             color: white;
         }
+        #userReviewsList {
+            margin-left: 20px;
+        }
     </style>
 </head>
 
@@ -1014,7 +1017,7 @@
                 <i class="fas fa-suitcase"></i><span>Мои туры</span>
             </div>
             <div class="sidebar-item" data-section="documents">
-                <i class="fas fa-folder-open"></i><span>Документы</span>
+                <i class="fas fa-star"></i><span>Отзывы</span>
             </div>
             <div class="sidebar-item" data-section="history">
                 <i class="fas fa-history"></i><span>История</span>
@@ -1133,9 +1136,43 @@
         <div id="documentsSection" class="dashboard-section hidden">
             <div class="form-section">
                 <br>
-                <h3>&nbsp;&nbsp;Документы</h3>
-                <p>&nbsp;&nbsp;Здесь будут ваши документы (ваучеры, билеты).</p>
-                <!-- можно добавить список загруженных документов -->
+                <h3>&nbsp;&nbsp;Отзывы о турах</h3>
+                <div id="reviewsContainer">
+                    <!-- Блок для формы отправки отзыва -->
+                    <div id="newReviewForm" class="review-form"
+                        style="background:#f5f3f0; border-radius:20px; padding:20px; margin-bottom:30px;">
+                        <h4>Оставить отзыв</h4>
+                        <div class="form-group">
+                            <label>Выберите тур (только завершённые, без отзыва)</label>
+                            <select id="reviewTourSelect" class="form-control"></select>
+                        </div>
+                        <div class="form-group">
+                            <label>Оценка</label>
+                            <div class="rating-stars" id="ratingStars">
+                                <i class="far fa-star" data-value="1"></i>
+                                <i class="far fa-star" data-value="2"></i>
+                                <i class="far fa-star" data-value="3"></i>
+                                <i class="far fa-star" data-value="4"></i>
+                                <i class="far fa-star" data-value="5"></i>
+                            </div>
+                            <input type="hidden" id="reviewRating" value="0">
+                        </div>
+                        <div class="form-group">
+                            <label>Текст отзыва</label>
+                            <textarea id="reviewText" rows="4"
+                                style="width:100%; padding:12px; border-radius:20px; border:none; background:#fff;"></textarea>
+                        </div>
+                        <div class="form-group">
+                           <br>
+                        </div>
+                        <button class="btn-save" id="submitReviewBtn">Отправить отзыв</button>
+                    </div>
+                    <!-- Список отзывов пользователя -->
+                    <div id="userReviewsList">
+                        <h4>Мои отзывы</h4>
+                        <div id="reviewsList"></div>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -1697,6 +1734,276 @@
         // Также в существующем коде после вызова showDashboard() при логине нужно обновить
         // В функции login и register после saveCurrentUser и showDashboard вызываем renderOrders()
         // В самом конце, после initUsersStorage и проверки авторизации, если пользователь есть, вызываем renderOrders()
+       // --- Функции для работы с отзывами ---
+function getReviews() {
+    return JSON.parse(localStorage.getItem('reviews')) || [];
+}
+
+function saveReviews(reviews) {
+    localStorage.setItem('reviews', JSON.stringify(reviews));
+}
+
+function addReview(review) {
+    const reviews = getReviews();
+    reviews.push(review);
+    saveReviews(reviews);
+}
+
+function getUserReviews(userId) {
+    return getReviews().filter(r => r.userId === userId);
+}
+
+// Получить оплаченные заказы пользователя, на которые ещё нет отзыва
+function getPaidOrdersWithoutReview(userId) {
+    const orders = JSON.parse(localStorage.getItem('orders')) || [];
+    const userOrders = orders.filter(order => order.userId === userId);
+    const paidOrders = userOrders.filter(order => {
+        const status = (order.status || '').trim().toLowerCase();
+        return status === 'оплачен';
+    });
+    const userReviews = getUserReviews(userId);
+    const reviewedOrderIds = userReviews.map(r => r.orderId);
+    return paidOrders.filter(order => !reviewedOrderIds.includes(order.id));
+}
+
+// Отрисовка звёзд (только для чтения)
+function renderStars(rating) {
+    let stars = '';
+    for (let i = 1; i <= 5; i++) {
+        stars += `<i class="fas fa-star" style="color:${i <= rating ? '#f5b301' : '#ccc'}"></i>`;
+    }
+    return stars;
+}
+
+// Отрисовка всей секции отзывов (форма + список)
+function renderReviewsSection() {
+    const user = getCurrentUser();
+    if (!user) return;
+
+    // 1. Заполняем select доступными оплаченными турами
+    const select = document.getElementById('reviewTourSelect');
+    if (select) {
+        const availableOrders = getPaidOrdersWithoutReview(user.id);
+        if (availableOrders.length === 0) {
+            select.innerHTML = '<option value="">Нет оплаченных туров для отзыва</option>';
+        } else {
+            select.innerHTML = '<option value="">Выберите оплаченный тур</option>' +
+                availableOrders.map(order => `<option value="${order.id}">${escapeHtml(order.name)} (статус: ${order.status})</option>`).join('');
+        }
+    }
+
+    // 2. Список уже написанных отзывов
+    const reviewsListDiv = document.getElementById('reviewsList');
+    if (reviewsListDiv) {
+        const userReviews = getUserReviews(user.id);
+        if (userReviews.length === 0) {
+            reviewsListDiv.innerHTML = '<p>Вы ещё не оставили ни одного отзыва.</p>';
+        } else {
+            reviewsListDiv.innerHTML = userReviews.map(review => `
+                <div class="review-card">
+                    <div class="rating-stars-readonly">${renderStars(review.rating)}</div>
+                    <p><strong>${escapeHtml(review.tourName)}</strong> (${new Date(review.date).toLocaleDateString()})</p>
+                    <p>${escapeHtml(review.text)}</p>
+                    ${review.images && review.images.length ? `
+                        <div class="review-images">
+                            ${review.images.map(img => `<img src="${img}" alt="фото отзыва" style="max-width:100px; max-height:100px; border-radius:12px; margin-right:8px;">`).join('')}
+                        </div>
+                    ` : ''}
+                </div>
+            `).join('');
+        }
+    }
+}
+
+// Защита от XSS
+function escapeHtml(str) {
+    if (!str) return '';
+    return str.replace(/[&<>]/g, function(m) {
+        if (m === '&') return '&amp;';
+        if (m === '<') return '&lt;';
+        if (m === '>') return '&gt;';
+        return m;
+    });
+}
+
+// ---------- Динамические элементы формы (звёзды, превью, отправка) ----------
+// Инициализация звёзд рейтинга (вешается один раз, но при перерисовке формы не сломается)
+function initRatingStars() {
+    const stars = document.querySelectorAll('#ratingStars i');
+    const ratingInput = document.getElementById('reviewRating');
+    if (!stars.length || !ratingInput) return;
+    stars.forEach(star => {
+        star.removeEventListener('click', starClickHandler);
+        star.addEventListener('click', starClickHandler);
+    });
+    function starClickHandler() {
+        const value = parseInt(this.getAttribute('data-value'));
+        ratingInput.value = value;
+        stars.forEach(s => {
+            if (parseInt(s.getAttribute('data-value')) <= value) {
+                s.classList.remove('far');
+                s.classList.add('fas');
+                s.style.color = '#f5b301';
+            } else {
+                s.classList.remove('fas');
+                s.classList.add('far');
+                s.style.color = '#ccc';
+            }
+        });
+    }
+}
+
+
+
+// Отправка отзыва (через делегирование, чтобы всегда работало)
+function initReviewSubmit() {
+    document.removeEventListener('click', reviewSubmitHandler);
+    document.addEventListener('click', reviewSubmitHandler);
+}
+
+async function reviewSubmitHandler(e) {
+    // Ищем клик по кнопке отправки или по дочернему элементу
+    let button = e.target.closest('#submitReviewBtn');
+    if (!button) return;
+
+    const user = getCurrentUser();
+    if (!user) {
+        showToast('Необходимо войти в аккаунт', true);
+        return;
+    }
+
+    const orderId = document.getElementById('reviewTourSelect')?.value;
+    if (!orderId) {
+        showToast('Выберите тур', true);
+        return;
+    }
+
+    const rating = parseInt(document.getElementById('reviewRating')?.value || '0');
+    if (rating === 0) {
+        showToast('Поставьте оценку', true);
+        return;
+    }
+
+    const text = document.getElementById('reviewText')?.value.trim();
+    if (!text) {
+        showToast('Введите текст отзыва', true);
+        return;
+    }
+
+    // Проверка заказа
+    const orders = JSON.parse(localStorage.getItem('orders')) || [];
+    const order = orders.find(o => o.id == orderId);
+    if (!order) {
+        showToast('Ошибка: тур не найден', true);
+        return;
+    }
+    const orderStatus = (order.status || '').trim().toLowerCase();
+    if (orderStatus !== 'оплачен') {
+        showToast(`Отзыв можно оставить только на оплаченный тур. Текущий статус: "${order.status}"`, true);
+        return;
+    }
+
+    // Создаём отзыв
+    const newReview = {
+        id: Date.now(),
+        userId: user.id,
+        orderId: order.id,
+        tourName: order.name,
+        rating: rating,
+        text: text,
+        images: images,
+        date: new Date().toISOString()
+    };
+    addReview(newReview);
+    showToast('Отзыв отправлен! Спасибо!');
+
+    // Очистка формы
+    const reviewText = document.getElementById('reviewText');
+    const reviewRating = document.getElementById('reviewRating');
+    const reviewImages = document.getElementById('reviewImages');
+    const imagePreview = document.getElementById('imagePreview');
+    if (reviewText) reviewText.value = '';
+    if (reviewRating) reviewRating.value = '0';
+    if (reviewImages) reviewImages.value = '';
+    if (imagePreview) imagePreview.innerHTML = '';
+
+    // Сбросить звёзды
+    const stars = document.querySelectorAll('#ratingStars i');
+    stars.forEach(s => {
+        s.classList.remove('fas');
+        s.classList.add('far');
+        s.style.color = '#ccc';
+    });
+
+    // Обновить отображение
+    renderReviewsSection();
+}
+
+// Переключение секций (вызывается при клике на sidebar)
+function switchDashboardSection(sectionId) {
+    const sections = document.querySelectorAll('.dashboard-section');
+    sections.forEach(section => section.classList.add('hidden'));
+    const targetSection = document.getElementById(sectionId);
+    if (targetSection) targetSection.classList.remove('hidden');
+    if (sectionId === 'documentsSection') {
+        renderReviewsSection();
+        // Переинициализируем динамические элементы формы (звёзды, превью)
+        initRatingStars();
+        initImagePreview();
+    }
+}
+
+function initSidebarHandlers() {
+    const sidebarItems = document.querySelectorAll('.sidebar-item');
+    sidebarItems.forEach(item => {
+        item.removeEventListener('click', sidebarClickHandler);
+        item.addEventListener('click', sidebarClickHandler);
+    });
+}
+
+function sidebarClickHandler() {
+    const section = this.getAttribute('data-section');
+    document.querySelectorAll('.sidebar-item').forEach(i => i.classList.remove('active'));
+    this.classList.add('active');
+
+    let sectionId = '';
+    switch (section) {
+        case 'personal': sectionId = 'personalInfoSection'; break;
+        case 'tours': sectionId = 'myToursSection'; renderOrders(); break;
+        case 'documents': sectionId = 'documentsSection'; renderReviewsSection(); break;
+        case 'history': sectionId = 'historySection'; renderOrders(); break;
+        case 'payments': sectionId = 'paymentsSection'; renderOrders(); break;
+        case 'notifications': sectionId = 'notificationsSection'; break;
+        case 'settings': sectionId = 'settingsSection'; break;
+        default: sectionId = 'personalInfoSection';
+    }
+    switchDashboardSection(sectionId);
+}
+
+// Инициализация всей системы отзывов (один раз)
+function initReviewsSystem() {
+    initReviewSubmit();    // делегированный обработчик кнопки
+    // Инициализация предпросмотра и звёзд произойдёт при открытии секции
+}
+
+// Запуск после загрузки DOM
+document.addEventListener('DOMContentLoaded', () => {
+    initReviewsSystem();
+});
+
+// Если showDashboard переопределена, добавляем инициализацию
+if (typeof window.showDashboard === 'function') {
+    const originalShowDashboard = window.showDashboard;
+    window.showDashboard = function() {
+        originalShowDashboard();
+        initReviewsSystem();
+        // Если при загрузке уже открыта секция документов, проинициализируем её
+        if (!document.getElementById('documentsSection').classList.contains('hidden')) {
+            initRatingStars();
+            initImagePreview();
+        }
+    };
+}
     </script>
 </body>
 
