@@ -182,7 +182,9 @@
       border-radius: 3px;
       transition: all 0.3s ease;
     }
-
+      body.menu-open {
+      overflow: hidden;
+    }
     /* Анимация для крестика при открытом меню */
     .burger-menu.active span:nth-child(1) {
       transform: translateY(9px) rotate(45deg);
@@ -2342,11 +2344,28 @@
     }
     init();
 
-    const burger = document.querySelector('.burger-menu');
-    const navMenu = document.querySelector('.nav-menu');
-    if (burger) {
-      burger.addEventListener('click', () => navMenu.classList.toggle('active'));
-    }
+// Бургер-меню
+const burger = document.querySelector('.burger-menu');
+const navMenu = document.querySelector('.nav-menu');
+const body = document.body;
+
+if (burger && navMenu) {
+  burger.addEventListener('click', function () {
+    burger.classList.toggle('active');      // ← добавляем класс для анимации крестика
+    navMenu.classList.toggle('active');
+    body.classList.toggle('menu-open');     // ← блокируем прокрутку фона
+  });
+
+  // Закрытие меню при клике на любую ссылку внутри
+  const navLinks = navMenu.querySelectorAll('a');
+  navLinks.forEach(link => {
+    link.addEventListener('click', () => {
+      burger.classList.remove('active');
+      navMenu.classList.remove('active');
+      body.classList.remove('menu-open');
+    });
+  });
+}
 
     document.getElementById('searchButton').addEventListener('click', () => {
       const destination = document.getElementById('searchDestination').value;
